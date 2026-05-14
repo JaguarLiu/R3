@@ -9,8 +9,10 @@ namespace BudPay.Endpoints;
 public static class WebhookEndpoints
 {
     // Command prefixes. The legacy /記帳 keyword is still read from config (Line:TriggerKeyword).
-    private const string CreateTripCommand = "/旅程";
+    private const string TripCommand = "/旅程";
     private const string SwitchTripCommand = "/切換";
+    private const string SettleCommand = "/結算";
+    private const string ListSubcommand = "列表";
 
     public static void MapWebhookEndpoints(this IEndpointRouteBuilder app)
     {
@@ -54,10 +56,12 @@ public static class WebhookEndpoints
 
                 try
                 {
-                    if (TryStripPrefix(text, CreateTripCommand, out var createArg))
-                        await HandleCreateTrip(createArg, scopeId, ev, db, line, log, ct);
+                    if (TryStripPrefix(text, TripCommand, out var tripArg))
+                        await HandleTripCommand(tripArg, scopeId, ev, db, line, log, ct);
                     else if (TryStripPrefix(text, SwitchTripCommand, out var switchArg))
                         await HandleSwitchTrip(switchArg, scopeId, ev, db, line, ct);
+                    else if (TryStripPrefix(text, SettleCommand, out _))
+                        await HandleSettle(scopeId, ev, db, line, ct);
                     else if (TryStripPrefix(text, recordKeyword, out var recordArg))
                         await HandleRecord(recordArg, scopeId, ev, db, line, gemini, log, ct);
                     else
@@ -73,14 +77,24 @@ public static class WebhookEndpoints
         });
     }
 
-    // -- /旅程 <name> ---------------------------------------------------------
-    private static async Task HandleCreateTrip(string arg, string scopeId, LineEvent ev,
+    // -- /旅程 <name> | /旅程 列表 -------------------------------------------
+    private static async Task HandleTripCommand(string arg, string scopeId, LineEvent ev,
         AppDbContext db, LineClient line, ILogger log, CancellationToken ct)
     {
-        var title = arg.Trim();
+        var trimmed = arg.Trim();
+
+        // Subcommand: /旅程 列表
+        if (trimmed.Equals(ListSubcommand, StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleListTrips(scopeId, ev, db, line, ct);
+            return;
+        }
+
+        // Otherwise: /旅程 <name>
+        var title = trimmed;
         if (string.IsNullOrWhiteSpace(title))
         {
-            await Reply(line, ev, "用法：/旅程 <名稱>", ct);
+            await Reply(line, ev, "用法：\n・/旅程 <名稱>  建立新旅程\n・/旅程 列表       列出本群所有旅程", ct);
             return;
         }
         if (title.Length > 100 || title.Any(char.IsControl))
@@ -134,6 +148,60 @@ public static class WebhookEndpoints
         target.IsActive = true;
         await db.SaveChangesAsync(ct);
         await Reply(line, ev, $"已切換至旅程：{target.Title} (id {target.Id})", ct);
+    }
+
+    // -- /旅程 列表 ----------------------------------------------------------
+    private static async Task HandleListTrips(string scopeId, LineEvent ev,
+        AppDbContext db, LineClient line, CancellationToken ct)
+    {
+        var trips = await db.Trips.AsNoTracking()
+            .Where(t => t.LineGroupId == scopeId)
+            .OrderByDescending(t => t.IsActive)
+            .ThenByDescending(t => t.CreatedAt)
+            .Select(t => new { t.Id, t.Title, t.IsActive })
+            .ToListAsync(ct);
+
+        if (trips.Count == 0)
+        {
+            await Reply(line, ev, "本群還沒有旅程，輸入「/旅程 <名稱>」建立第一個吧！", ct);
+            return;
+        }
+
+        var lines = trips.Select(t => $"{(t.IsActive ? "▶" : "・")} {t.Title}  (id {t.Id})");
+        await Reply(line, ev, $"本群旅程：\n{string.Join("\n", lines)}", ct);
+    }
+
+    // -- /結算 ---------------------------------------------------------------
+    private static async Task HandleSettle(string scopeId, LineEvent ev,
+        AppDbContext db, LineClient line, CancellationToken ct)
+    {
+        var trip = await db.Trips.AsNoTracking()
+            .Include(t => t.Participants.OrderBy(p => p.Order))
+            .Include(t => t.Expenses)
+            .FirstOrDefaultAsync(t => t.LineGroupId == scopeId && t.IsActive, ct);
+
+        if (trip is null)
+        {
+            await Reply(line, ev, "還沒有作用中的旅程，沒東西可以結算。", ct);
+            return;
+        }
+        if (trip.Expenses.Count == 0)
+        {
+            await Reply(line, ev, $"《{trip.Title}》目前還沒有任何花費。", ct);
+            return;
+        }
+
+        var participants = trip.Participants.Select(p => p.Name).ToList();
+        var transfers = SettlementCalculator.Compute(participants, trip.Expenses);
+
+        if (transfers.Count == 0)
+        {
+            await Reply(line, ev, $"《{trip.Title}》：扯平啦！沒人欠錢～", ct);
+            return;
+        }
+
+        var lines = transfers.Select(t => $"・{t.From} → {t.To}  ${t.Amount:N0}");
+        await Reply(line, ev, $"《{trip.Title}》結算：\n{string.Join("\n", lines)}", ct);
     }
 
     // -- /記帳 <text> ---------------------------------------------------------
