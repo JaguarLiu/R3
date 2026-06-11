@@ -1,10 +1,12 @@
 using System.Text.Json;
-using BudPay.Data;
-using BudPay.Models;
-using BudPay.Services;
+using R3.Common;
+using R3.Data;
+using R3.Models;
+using R3.Providers;
+using R3.Services;
 using Microsoft.EntityFrameworkCore;
 
-namespace BudPay.Endpoints;
+namespace R3.Endpoints;
 
 public static class WebhookEndpoints
 {
@@ -273,6 +275,11 @@ public static class WebhookEndpoints
             entries = new() { BuildFromRegex(trip.Id, fallback.Amount, fallback.Note, senderDisplay!, participants) };
         }
 
+        foreach (var entry in entries)
+        {
+            entry.SourceChannel = "line";
+            entry.CreatedByName = senderDisplay;
+        }
         db.SplitExpenses.AddRange(entries);
         await db.SaveChangesAsync(ct);
 
@@ -294,6 +301,8 @@ public static class WebhookEndpoints
             Total = amount,
             Payers = new Dictionary<string, decimal> { [payer] = amount },
             Splits = splits,
+            SourceChannel = "line",
+            CreatedByName = payer,
         };
     }
 

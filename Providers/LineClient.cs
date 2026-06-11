@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
-namespace BudPay.Services;
+namespace R3.Providers;
 
 public class LineClient(HttpClient http, IConfiguration config, ILogger<LineClient> logger)
 {

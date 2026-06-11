@@ -1,4 +1,4 @@
-namespace BudPay.Models;
+namespace R3.Models;
 
 public class Trip
 {
@@ -13,6 +13,9 @@ public class Trip
     // Per-LineGroupId, at most one trip is active at a time — that's where new
     // /記帳 messages from that group get appended.
     public bool IsActive { get; set; }
+
+    // Web ownership. Null for LINE-created trips (accessed only via the webhook).
+    public long? OwnerUserId { get; set; }
 
     public List<Participant> Participants { get; set; } = new();
     public List<SplitExpense> Expenses { get; set; } = new();
@@ -33,6 +36,11 @@ public class SplitExpense
     public string Day { get; set; } = "";
     public string Item { get; set; } = "";
     public decimal Total { get; set; }
+
+    // Audit: who created this row and from where.
+    public long? CreatedByUserId { get; set; }   // web user; null for LINE
+    public string? CreatedByName { get; set; }    // display name (web user or LINE sender)
+    public string SourceChannel { get; set; } = "web";  // "web" | "line"
 
     // Stored as jsonb: { "name": amount }
     public Dictionary<string, decimal> Payers { get; set; } = new();

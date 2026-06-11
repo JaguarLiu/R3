@@ -4,7 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace BudPay.Migrations
+namespace R3.Migrations
 {
     /// <inheritdoc />
     public partial class DropExpensesTable : Migration

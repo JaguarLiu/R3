@@ -2,7 +2,7 @@
 
 #nullable disable
 
-namespace BudPay.Migrations
+namespace R3.Migrations
 {
     /// <inheritdoc />
     public partial class AddLineGroupBindingToTrip : Migration

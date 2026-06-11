@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace BudPay.Models;
+namespace R3.Models;
 
 public class LineWebhookPayload
 {

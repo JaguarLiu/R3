@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace BudPay.Services;
+namespace R3.Providers;
 
 public static class LineSignature
 {

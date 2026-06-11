@@ -6,10 +6,11 @@ import {
   ChevronDown, ChevronUp, Sparkles, BrainCircuit, Loader2, Scale, Filter,
 } from 'lucide-react';
 import { api } from './api.js';
+import { brutalBorder, brutalShadowLg, brutalBtn } from './brutal.js';
 
-const TRIP_STORAGE_KEY = 'budpay.tripId';
+const TRIP_STORAGE_KEY = 'r3.tripId';
 
-const App = () => {
+const App = ({ onLogout }) => {
   // --- 1. State ---
   const [tripId, setTripId] = useState(() => localStorage.getItem(TRIP_STORAGE_KEY));
   const [isSetupComplete, setIsSetupComplete] = useState(false);
@@ -305,11 +306,7 @@ const App = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // --- 7. Render ---
-  const brutalBorder = 'border-4 border-black';
-  const brutalShadowLg = 'shadow-[10px_10px_0px_0px_rgba(0,0,0,1)]';
-  const brutalBtn = 'border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none transition-all';
-
+  // --- 7. Render --- (brutal* tokens imported from ./brutal.js)
   if (loading) {
     return (
       <div className="min-h-screen bg-blue-400 flex items-center justify-center text-black font-black text-3xl">
@@ -377,9 +374,12 @@ const App = () => {
               </p>
             </div>
           </div>
-          <button onClick={() => setIsSetupComplete(false)} className={`bg-white font-black text-sm flex items-center gap-2 px-4 py-3 ${brutalBtn} hover:bg-gray-200 rotate-2`}>
-            <Settings2 size={20} strokeWidth={3} /> 重設一切
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsSetupComplete(false)} className={`bg-white font-black text-sm flex items-center gap-2 px-4 py-3 ${brutalBtn} hover:bg-gray-200 rotate-2`}>
+              <Settings2 size={20} strokeWidth={3} /> 重設一切
+            </button>
+            <button onClick={onLogout} className="text-sm text-slate-500 underline">登出</button>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

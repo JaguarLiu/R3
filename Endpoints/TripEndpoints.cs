@@ -1,53 +1,70 @@
-using BudPay.Data;
-using BudPay.Models;
-using BudPay.Services;
+using R3.Auth;
+using R3.Common;
+using R3.Data;
+using R3.Models;
+using R3.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
-namespace BudPay.Endpoints;
+namespace R3.Endpoints;
 
 public static class TripEndpoints
 {
     public static void MapTripEndpoints(this IEndpointRouteBuilder app)
     {
-        var trips = app.MapGroup("/api/trips");
+        var trips = app.MapGroup("/api/trips").RequireAuthorization();
 
-        trips.MapGet("/", async (AppDbContext db) =>
-            await db.Trips.AsNoTracking()
-                .Select(t => new { t.Id, t.Title, t.Days, t.CreatedAt })
-                .OrderByDescending(t => t.CreatedAt)
-                .ToListAsync());
-
-        trips.MapGet("/{id:long}", async (long id, AppDbContext db) =>
+        trips.MapGet("/", async (ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
-            var trip = await db.Trips.AsNoTracking()
-                .Include(t => t.Participants.OrderBy(p => p.Order))
-                .Include(t => t.Expenses.OrderBy(e => e.CreatedAt))
-                .FirstOrDefaultAsync(t => t.Id == id);
-            return trip is null ? Results.NotFound() : Results.Ok(trip);
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            var memberTripIds = db.TripMembers.Where(m => m.UserId == userId).Select(m => m.TripId);
+            return Results.Ok(await db.Trips.AsNoTracking()
+                .Where(t => t.OwnerUserId == userId || memberTripIds.Contains(t.Id))
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => new { t.Id, t.Title, t.Days, t.CreatedAt, isOwner = t.OwnerUserId == userId })
+                .ToListAsync(ct));
         });
 
-        trips.MapPost("/", async ([FromBody] TripUpsertDto dto, AppDbContext db) =>
+        trips.MapGet("/{id:long}", async (long id, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            var trip = await TripAccess.FindAccessibleAsync(db, id, userId.Value, ownerOnly: false, ct);
+            if (trip is null) return Results.NotFound();
+            var members = await db.TripMembers.Where(m => m.TripId == id)
+                .Join(db.Users, m => m.UserId, u => u.Id, (m, u) => new { u.Id, u.DisplayName, u.Email })
+                .ToListAsync(ct);
+            return Results.Ok(new { trip.Id, trip.Title, trip.Days, trip.CreatedAt,
+                isOwner = trip.OwnerUserId == userId, trip.Participants, trip.Expenses, members });
+        });
+
+        trips.MapPost("/", async ([FromBody] TripUpsertDto dto, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
+        {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
             var tripValidationError = InputSanitizer.ValidateTrip(dto);
             if (tripValidationError != null) return Results.BadRequest(tripValidationError);
 
-            var trip = new Trip { Title = dto.Title.Trim(), Days = dto.Days };
+            var trip = new Trip { Title = dto.Title.Trim(), Days = dto.Days, OwnerUserId = userId };
             var names = dto.Participants.Select(n => n.Trim()).Distinct().ToList();
             for (var i = 0; i < names.Count; i++)
                 trip.Participants.Add(new Participant { Name = names[i], Order = i, TripId = trip.Id });
             db.Trips.Add(trip);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             return Results.Created($"/api/trips/{trip.Id}", trip);
         });
 
-        trips.MapPut("/{id:long}", async (long id, [FromBody] TripUpsertDto dto, AppDbContext db) =>
+        trips.MapPut("/{id:long}", async (long id, [FromBody] TripUpsertDto dto, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
             var tripValidationError = InputSanitizer.ValidateTrip(dto);
             if (tripValidationError != null) return Results.BadRequest(tripValidationError);
 
-            var trip = await db.Trips.Include(t => t.Participants).FirstOrDefaultAsync(t => t.Id == id);
-            if (trip is null) return Results.NotFound();
+            var trip = await db.Trips.Include(t => t.Participants).FirstOrDefaultAsync(t => t.Id == id, ct);
+            if (trip is null || trip.OwnerUserId != userId) return Results.NotFound();
             trip.Title = dto.Title.Trim();
             trip.Days = dto.Days;
 
@@ -62,74 +79,87 @@ public static class TripEndpoints
                 if (existingByName.TryGetValue(name, out var p)) p.Order = i;
                 else trip.Participants.Add(new Participant { Name = name, Order = i, TripId = trip.Id });
             }
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             return Results.Ok(trip);
         });
 
-        trips.MapDelete("/{id:long}", async (long id, AppDbContext db) =>
+        trips.MapDelete("/{id:long}", async (long id, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
-            var trip = await db.Trips.FindAsync(id);
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            var trip = await db.Trips.FirstOrDefaultAsync(t => t.Id == id && t.OwnerUserId == userId, ct);
             if (trip is null) return Results.NotFound();
             db.Trips.Remove(trip);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
 
         // Expenses
-        var expenses = app.MapGroup("/api/trips/{tripId:long}/expenses");
+        var expenses = app.MapGroup("/api/trips/{tripId:long}/expenses").RequireAuthorization();
 
-        expenses.MapPost("/", async (long tripId, [FromBody] SplitExpenseDto dto, AppDbContext db) =>
+        expenses.MapPost("/", async (long tripId, [FromBody] SplitExpenseDto dto,
+            ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
             var expenseValidationError = InputSanitizer.ValidateExpense(dto);
             if (expenseValidationError != null) return Results.BadRequest(expenseValidationError);
-            if (!await db.Trips.AnyAsync(t => t.Id == tripId)) return Results.NotFound();
+            var trip = await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: false, ct);
+            if (trip is null) return Results.NotFound();
+            var creator = await db.Users.FindAsync(new object[] { userId.Value }, ct);
             var entry = new SplitExpense
             {
-                TripId = tripId,
-                Day = dto.Day.Trim(),
-                Item = dto.Item.Trim(),
-                Total = dto.Total,
-                Payers = dto.Payers,
-                Splits = dto.Splits
+                TripId = tripId, Day = dto.Day.Trim(), Item = dto.Item.Trim(),
+                Total = dto.Total, Payers = dto.Payers, Splits = dto.Splits,
+                CreatedByUserId = userId, CreatedByName = creator?.DisplayName, SourceChannel = "web",
             };
             db.SplitExpenses.Add(entry);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             return Results.Created($"/api/trips/{tripId}/expenses/{entry.Id}", entry);
         });
 
-        expenses.MapPut("/{id:long}", async (long tripId, long id, [FromBody] SplitExpenseDto dto, AppDbContext db) =>
+        expenses.MapPut("/{id:long}", async (long tripId, long id, [FromBody] SplitExpenseDto dto,
+            ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
             var expenseValidationError = InputSanitizer.ValidateExpense(dto);
             if (expenseValidationError != null) return Results.BadRequest(expenseValidationError);
-            var entry = await db.SplitExpenses.FirstOrDefaultAsync(e => e.Id == id && e.TripId == tripId);
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            if (await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: false, ct) is null)
+                return Results.NotFound();
+            var entry = await db.SplitExpenses.FirstOrDefaultAsync(e => e.Id == id && e.TripId == tripId, ct);
             if (entry is null) return Results.NotFound();
             entry.Day = dto.Day.Trim();
             entry.Item = dto.Item.Trim();
             entry.Total = dto.Total;
             entry.Payers = dto.Payers;
             entry.Splits = dto.Splits;
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             return Results.Ok(entry);
         });
 
-        expenses.MapDelete("/{id:long}", async (long tripId, long id, AppDbContext db) =>
+        expenses.MapDelete("/{id:long}", async (long tripId, long id,
+            ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
-            var entry = await db.SplitExpenses.FirstOrDefaultAsync(e => e.Id == id && e.TripId == tripId);
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            if (await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: false, ct) is null)
+                return Results.NotFound();
+            var entry = await db.SplitExpenses.FirstOrDefaultAsync(e => e.Id == id && e.TripId == tripId, ct);
             if (entry is null) return Results.NotFound();
             db.SplitExpenses.Remove(entry);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
 
         // AI endpoints (Gemini extracted to backend). Rate-limited per-IP via "ai" policy.
-        var ai = app.MapGroup("/api/ai").RequireRateLimiting("ai");
+        var ai = app.MapGroup("/api/ai").RequireRateLimiting("ai").RequireAuthorization();
 
-        ai.MapPost("/analyze/{tripId:long}", async (long tripId, GeminiService gemini, AppDbContext db, CancellationToken ct) =>
+        ai.MapPost("/analyze/{tripId:long}", async (long tripId, ClaimsPrincipal principal, GeminiService gemini, AppDbContext db, CancellationToken ct) =>
         {
-            var trip = await db.Trips.AsNoTracking()
-                .Include(t => t.Participants)
-                .Include(t => t.Expenses)
-                .FirstOrDefaultAsync(t => t.Id == tripId, ct);
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            var trip = await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: false, ct);
             if (trip is null) return Results.NotFound();
 
             var summary = trip.Participants.ToDictionary(p => p.Name, p => new
@@ -155,18 +185,19 @@ public static class TripEndpoints
         ai.MapPost("/parse/{tripId:long}", async (
             long tripId,
             [FromBody] TextMessageDto body,
+            ClaimsPrincipal principal,
             GeminiService gemini,
             AppDbContext db,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(body?.Text)) return Results.BadRequest(new { error = "text required" });
 
-            var trip = await db.Trips
-                .Include(t => t.Participants.OrderBy(p => p.Order))
-                .FirstOrDefaultAsync(t => t.Id == tripId, ct);
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            var trip = await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: false, ct);
             if (trip is null) return Results.NotFound();
 
-            var participants = trip.Participants.Select(p => p.Name).ToList();
+            var participants = trip.Participants.OrderBy(p => p.Order).Select(p => p.Name).ToList();
 
             BatchParseResult parsed;
             try { parsed = await gemini.BatchParseAsync(body.Text, participants, ct); }
@@ -175,9 +206,15 @@ public static class TripEndpoints
             if (parsed.UnknownNames.Count > 0)
                 return Results.BadRequest(new { error = "unknown_names", names = parsed.UnknownNames });
 
+            var creator = await db.Users.FindAsync(new object[] { userId.Value }, ct);
             var entries = parsed.Items
                 .Where(i => i.Total > 0 && !string.IsNullOrWhiteSpace(i.Item))
-                .Select(i => ExpenseBuilder.FromParsedItem(tripId, i, participants))
+                .Select(i =>
+                {
+                    var e = ExpenseBuilder.FromParsedItem(tripId, i, participants);
+                    e.CreatedByUserId = userId; e.CreatedByName = creator?.DisplayName; e.SourceChannel = "web";
+                    return e;
+                })
                 .ToList();
 
             if (entries.Count == 0) return Results.BadRequest(new { error = "no_expenses_parsed" });
@@ -186,12 +223,49 @@ public static class TripEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(entries);
         });
+
+        var members = app.MapGroup("/api/trips/{tripId:long}/members").RequireAuthorization();
+
+        members.MapPost("/", async (long tripId, [FromBody] AddMemberDto dto,
+            ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
+        {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            if (await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: true, ct) is null)
+                return Results.NotFound();
+            var email = (dto?.Email ?? "").Trim().ToLowerInvariant();
+            if (email.Length == 0) return Results.BadRequest(new { error = "email_required" });
+            var target = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+            if (target is null) return Results.NotFound(new { error = "user_not_found" });
+            if (target.Id == userId) return Results.BadRequest(new { error = "owner_already_member" });
+            if (!await db.TripMembers.AnyAsync(m => m.TripId == tripId && m.UserId == target.Id, ct))
+            {
+                db.TripMembers.Add(new TripMember { TripId = tripId, UserId = target.Id });
+                await db.SaveChangesAsync(ct);
+            }
+            return Results.Ok(new { target.Id, target.DisplayName, target.Email });
+        });
+
+        members.MapDelete("/{memberUserId:long}", async (long tripId, long memberUserId,
+            ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
+        {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            if (await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: true, ct) is null)
+                return Results.NotFound();
+            var row = await db.TripMembers.FirstOrDefaultAsync(m => m.TripId == tripId && m.UserId == memberUserId, ct);
+            if (row is null) return Results.NotFound();
+            db.TripMembers.Remove(row);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        });
     }
 }
 
 public record TripUpsertDto(string Title, int Days, List<string> Participants);
 public record SplitExpenseDto(string Day, string Item, decimal Total, Dictionary<string, decimal> Payers, Dictionary<string, decimal> Splits);
 public record TextMessageDto(string Text);
+public record AddMemberDto(string Email);
 
 // Validates user-supplied fields that flow into Gemini system prompts.
 // Rejects control chars (line breaks, tabs, etc.) so attackers can't break out of

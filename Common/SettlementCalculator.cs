@@ -1,6 +1,6 @@
-using BudPay.Models;
+using R3.Models;
 
-namespace BudPay.Services;
+namespace R3.Common;
 
 // Mirrors the web UI's "direct" settlement mode: greedy pairwise match between
 // people owed money (creditors, paid > spent) and people who owe (debtors).

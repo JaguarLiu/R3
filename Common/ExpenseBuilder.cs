@@ -1,6 +1,6 @@
-using BudPay.Models;
+using R3.Models;
 
-namespace BudPay.Services;
+namespace R3.Common;
 
 // Pure helper that turns a Gemini-parsed item into a SplitExpense row,
 // applying the same payer/split rules used by the web UI: even split with

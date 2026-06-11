@@ -4,13 +4,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>BudPay</RootNamespace>
-    <SpaRoot>ClientApp\</SpaRoot>
+    <RootNamespace>R3</RootNamespace>
+    <SpaRoot>Client\</SpaRoot>
     <SpaProxyServerUrl>http://localhost:5173</SpaProxyServerUrl>
-    <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>
+    <SpaProxyLaunchCommand>yarn dev</SpaProxyLaunchCommand>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.SpaProxy" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
@@ -22,11 +24,15 @@
     <Content Remove="$(SpaRoot)**" />
     <None Remove="$(SpaRoot)**" />
     <None Include="$(SpaRoot)**" Exclude="$(SpaRoot)node_modules\**;$(SpaRoot)dist\**" />
+    <!-- Exclude test project sources from the main project -->
+    <Compile Remove="R3.Tests/**" />
+    <Content Remove="R3.Tests/**" />
+    <None Remove="R3.Tests/**" />
   </ItemGroup>
 
   <Target Name="BuildSpa" AfterTargets="ComputeFilesToPublish" Condition="'$(SkipSpaBuild)' != 'true'">
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm install" />
-    <Exec WorkingDirectory="$(SpaRoot)" Command="npm run build" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="yarn install --frozen-lockfile" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="yarn build" />
     <ItemGroup>
       <SpaDist Include="$(SpaRoot)dist\**" />
       <ResolvedFileToPublish Include="@(SpaDist->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">

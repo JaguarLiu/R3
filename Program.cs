@@ -1,10 +1,15 @@
+using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
-using BudPay.Data;
-using BudPay.Endpoints;
-using BudPay.Services;
+using R3.Data;
+using R3.Models;
+using R3.Endpoints;
+using R3.Services;
+using R3.Providers;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +18,10 @@ builder.Services.AddDbContext<AppDbContext>(o =>
 
 builder.Services.AddHttpClient<LineClient>();
 builder.Services.AddHttpClient<GeminiService>();
+builder.Services.AddHttpClient<LineLoginClient>();
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+builder.Services.AddSingleton<TokenService>();
+builder.Services.AddScoped<RefreshTokenService>();
 
 builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(o =>
 {
@@ -64,7 +73,39 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         });
     });
+
+    // Per-IP fixed window: 10 requests / minute for auth endpoints.
+    options.AddPolicy("auth", httpContext =>
+    {
+        var key = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true,
+        });
+    });
 });
+
+var jwt = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidIssuer = jwt.Issuer,
+            ValidAudience = jwt.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SignKey)),
+            ValidateIssuerSigningKey = true,
+            ValidateLifetime = true,
+            ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
+            ClockSkew = TimeSpan.FromSeconds(5),
+        };
+    });
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -75,6 +116,9 @@ if (app.Environment.IsDevelopment())
     app.UseCors(SpaCorsPolicy);
 
 app.UseRateLimiter();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -88,7 +132,8 @@ using (var scope = app.Services.CreateScope())
 
 app.MapTripEndpoints();
 app.MapWebhookEndpoints();
+app.MapAuthEndpoints();
 
-app.MapGet("/api/health", () => "BudPay API is alive.");
+app.MapGet("/api/health", () => "R3 API is alive.");
 
 app.Run();

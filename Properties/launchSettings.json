@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "BudPay": {
+    "R3": {
       "commandName": "Project",
       "launchBrowser": false,
       "applicationUrl": "http://localhost:5000",
