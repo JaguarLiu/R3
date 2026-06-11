@@ -2,12 +2,18 @@ const BASE = '/api';
 let accessToken = null;
 let onLogout = () => {};
 
+// Drop the PWA's network-first cache of GET /api/* responses, so a different
+// user logging in on a shared browser can't read the previous user's data.
+function clearApiCache() {
+  if (typeof caches !== 'undefined') caches.delete('api-cache').catch(() => {});
+}
+
 export const tokenStore = {
   get: () => accessToken,
   set: (t) => { accessToken = t; },
   clear: () => { accessToken = null; },
   onLogout: (cb) => { onLogout = cb; },
-  fireLogout: () => { accessToken = null; onLogout(); },
+  fireLogout: () => { accessToken = null; clearApiCache(); onLogout(); },
 };
 
 async function authReq(path, body) {

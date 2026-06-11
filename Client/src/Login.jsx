@@ -53,7 +53,7 @@ export default function Login({ onAuthed, onBack }) {
         <div className={`bg-white ${brutalBorder} ${brutalShadowLg} overflow-hidden`}>
           {/* Header */}
           <div className="bg-yellow-400 p-6 border-b-4 border-black flex items-center gap-4">
-            <img src="/r3_icon.png" alt="R3"
+            <img src="/favicon.png" alt="R3"
               className={`w-16 h-16 bg-white object-contain ${brutalBorder} ${brutalShadowSm} -rotate-3`} />
             <div className="-rotate-1">
               <h1 className="text-3xl font-black tracking-widest uppercase drop-shadow-[2px_2px_0px_white]">

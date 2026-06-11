@@ -8,6 +8,7 @@ using R3.Services;
 using R3.Providers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -121,7 +122,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// .webmanifest isn't in ASP.NET Core's default MIME map; register it so the
+// PWA manifest is served as application/manifest+json (browsers reject otherwise).
+var contentTypeProvider = new FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".webmanifest"] = "application/manifest+json";
+app.UseStaticFiles(new StaticFileOptions { ContentTypeProvider = contentTypeProvider });
 
 // Auto-migrate on startup (fine for dev; switch to explicit migrations for prod)
 using (var scope = app.Services.CreateScope())
