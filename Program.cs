@@ -11,11 +11,17 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<AppDbContext>(o =>
-    o.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
+// Npgsql 8+ requires opting into dynamic JSON to serialize arbitrary CLR types into jsonb.
+// SplitExpense.Payers/Splits are Dictionary<string,decimal> mapped to jsonb; without this,
+// SaveChanges throws at write time (the silent 500 on POST /api/trips/{id}/expenses).
+var npgsqlDataSource = new NpgsqlDataSourceBuilder(builder.Configuration.GetConnectionString("Postgres"))
+    .EnableDynamicJson()
+    .Build();
+builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(npgsqlDataSource));
 
 builder.Services.AddHttpClient<LineClient>();
 builder.Services.AddHttpClient<GeminiService>();
@@ -117,6 +123,40 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// Global catch-all: log EVERY unhandled exception (from any endpoint or middleware) with full
+// detail + the request method/path, then return a 500 ProblemDetails. Registered first so it
+// wraps the entire pipeline. Without this, unhandled errors returned an empty 500 and left the
+// log silent (e.g. POST /api/trips/{id}/expenses failures).
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next(context);
+    }
+    catch (Exception ex)
+    {
+        var logger = context.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("R3.UnhandledException");
+        logger.LogError(ex, "Unhandled exception on {Method} {Path}",
+            context.Request.Method, context.Request.Path);
+
+        if (!context.Response.HasStarted)
+        {
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            // Never leak ex.Message to clients in prod (may contain connection strings, paths, PII).
+            // The full exception is already in the server log above; clients get a traceId to report.
+            await context.Response.WriteAsJsonAsync(new
+            {
+                title = "An unexpected error occurred.",
+                status = 500,
+                detail = app.Environment.IsDevelopment() ? ex.Message : "An internal error occurred.",
+                traceId = context.TraceIdentifier,
+            });
+        }
+    }
+});
 
 // Must run BEFORE UseRateLimiter so the limiter partitions on the real client IP.
 app.UseForwardedHeaders();
