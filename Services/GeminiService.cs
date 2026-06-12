@@ -16,7 +16,7 @@ public class GeminiService
     {
         _http = http;
         _apiKey = config["Gemini:ApiKey"] ?? "";
-        _model = config["Gemini:Model"] ?? "gemini-2.5-flash-preview-09-2025";
+        _model = config["Gemini:Model"] ?? "gemini-2.5-flash";
     }
 
     private const int MaxAnalyzePayloadChars = 8000;

@@ -155,8 +155,9 @@ public static class TripEndpoints
         // AI endpoints (Gemini extracted to backend). Rate-limited per-IP via "ai" policy.
         var ai = app.MapGroup("/api/ai").RequireRateLimiting("ai").RequireAuthorization();
 
-        ai.MapPost("/analyze/{tripId:long}", async (long tripId, ClaimsPrincipal principal, GeminiService gemini, AppDbContext db, CancellationToken ct) =>
+        ai.MapPost("/analyze/{tripId:long}", async (long tripId, ClaimsPrincipal principal, GeminiService gemini, AppDbContext db, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("R3.Endpoints.AI");
             var userId = principal.CurrentUserId();
             if (userId is null) return Results.Unauthorized();
             var trip = await TripAccess.FindAccessibleAsync(db, tripId, userId.Value, ownerOnly: false, ct);
@@ -176,6 +177,7 @@ public static class TripEndpoints
             }
             catch (Exception ex)
             {
+                logger.LogError(ex, "AI analyze failed for trip {TripId}", tripId);
                 return Results.Problem(ex.Message);
             }
         });
@@ -188,8 +190,10 @@ public static class TripEndpoints
             ClaimsPrincipal principal,
             GeminiService gemini,
             AppDbContext db,
+            ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
+            var logger = loggerFactory.CreateLogger("R3.Endpoints.AI");
             if (string.IsNullOrWhiteSpace(body?.Text)) return Results.BadRequest(new { error = "text required" });
 
             var userId = principal.CurrentUserId();
@@ -201,7 +205,11 @@ public static class TripEndpoints
 
             BatchParseResult parsed;
             try { parsed = await gemini.BatchParseAsync(body.Text, participants, ct); }
-            catch (Exception ex) { return Results.Problem(ex.Message); }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "AI parse failed for trip {TripId}, text length {Len}", tripId, body.Text.Length);
+                return Results.Problem(ex.Message);
+            }
 
             if (parsed.UnknownNames.Count > 0)
                 return Results.BadRequest(new { error = "unknown_names", names = parsed.UnknownNames });

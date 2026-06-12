@@ -342,7 +342,7 @@ const App = ({ onLogout }) => {
                 <button onClick={() => { if (newParticipant.trim()) { setParticipants([...participants, newParticipant.trim()]); setNewParticipant(''); } }}
                   className={`bg-green-400 px-6 font-black text-2xl ${brutalBtn}`}><Plus strokeWidth={4} /></button>
               </div>
-              <div className="flex flex-wrap gap-3 max-h-40 overflow-y-auto p-2">
+              <div className="flex flex-wrap gap-3 max-h-40 overflow-y-auto overflow-x-hidden p-2">
                 {participants.map((p, idx) => (
                   <div key={p} className={`bg-pink-400 px-4 py-2 text-xl font-black flex items-center gap-2 ${brutalBorder} shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] ${idx % 2 ? '-rotate-2' : 'rotate-2'}`}>
                     {p} <Trash2 size={20} strokeWidth={3} className="cursor-pointer hover:text-white" onClick={() => setParticipants(prev => prev.filter(x => x !== p))} />
@@ -663,21 +663,22 @@ const App = ({ onLogout }) => {
                   </div>
                 </div>
               )}
-              <div className="space-y-4 max-h-[400px] overflow-y-auto">
-                {settlementsResult.list.map((s, i) => (
-                  <div key={i} className={`bg-cyan-300 p-6 flex flex-col md:flex-row items-center justify-between ${brutalBorder} shadow-[4px_4px_0px_0px_black] ${i % 2 ? '-rotate-1' : 'rotate-1'}`}>
-                    <div className="text-2xl font-black flex items-center gap-4 flex-wrap justify-center">
-                      <span className="bg-white px-4 py-2 border-2 border-black">{s.from}</span>
-                      <span className="text-pink-600">➡️ 給 ➡️</span>
-                      <span className={`px-4 py-2 border-2 border-black ${s.to === settlementsResult.treasurer ? 'bg-yellow-400' : 'bg-white'}`}>{s.to}</span>
+              {settlementsResult.list.length === 0 ? (
+                <div className={`bg-yellow-200 p-8 text-center text-3xl font-black ${brutalBorder} shadow-[6px_6px_0px_0px_black] rotate-2`}>沒人欠錢啦！天下太平！</div>
+              ) : (
+                <div className="space-y-4 max-h-[400px] overflow-y-auto overflow-x-hidden px-2 py-2">
+                  {settlementsResult.list.map((s, i) => (
+                    <div key={i} className={`bg-cyan-300 p-6 flex flex-col md:flex-row items-center justify-between ${brutalBorder} shadow-[4px_4px_0px_0px_black] ${i % 2 ? '-rotate-1' : 'rotate-1'}`}>
+                      <div className="text-2xl font-black flex items-center gap-4 flex-wrap justify-center">
+                        <span className="bg-white px-4 py-2 border-2 border-black">{s.from}</span>
+                        <span className="text-pink-600">➡️ 給 ➡️</span>
+                        <span className={`px-4 py-2 border-2 border-black ${s.to === settlementsResult.treasurer ? 'bg-yellow-400' : 'bg-white'}`}>{s.to}</span>
+                      </div>
+                      <div className="text-4xl md:text-5xl font-black text-white drop-shadow-[3px_3px_0px_black] mt-4 md:mt-0">${s.amount.toLocaleString()}</div>
                     </div>
-                    <div className="text-4xl md:text-5xl font-black text-white drop-shadow-[3px_3px_0px_black] mt-4 md:mt-0">${s.amount.toLocaleString()}</div>
-                  </div>
-                ))}
-                {settlementsResult.list.length === 0 && (
-                  <div className={`bg-yellow-200 p-8 text-center text-3xl font-black ${brutalBorder} shadow-[6px_6px_0px_0px_black] rotate-2`}>沒人欠錢啦！天下太平！</div>
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
