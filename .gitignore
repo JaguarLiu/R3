@@ -485,6 +485,5 @@ appsettings.json
 CLAUDE.md
 Client/.pnp.cjs
 Client/.pnp.loader.mjs
-Client/yarn.lock
 Client/.yarn/
 Client/dist/
