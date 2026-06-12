@@ -1,0 +1,27 @@
+# Build artifacts
+**/bin
+**/obj
+wwwroot
+
+# SPA build output / deps (rebuilt inside the image)
+Client/node_modules
+Client/dist
+Client/.pnp.*
+Client/.yarn/unplugged
+Client/.yarn/install-state.gz
+Client/.yarn/cache
+
+# Local secrets — must NOT be baked into the image (set them as Zeabur env vars)
+appsettings.json
+appsettings.*.json
+
+# Git / docs / editor
+.git
+.gitignore
+.vs
+.vscode
+*.md
+docs
+
+# Tests (not needed in the runtime image)
+R3.Tests

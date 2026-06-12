@@ -31,7 +31,7 @@
   </ItemGroup>
 
   <Target Name="BuildSpa" AfterTargets="ComputeFilesToPublish" Condition="'$(SkipSpaBuild)' != 'true'">
-    <Exec WorkingDirectory="$(SpaRoot)" Command="yarn install --frozen-lockfile" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="yarn install --immutable" />
     <Exec WorkingDirectory="$(SpaRoot)" Command="yarn build" />
     <ItemGroup>
       <SpaDist Include="$(SpaRoot)dist\**" />

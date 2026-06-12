@@ -35,17 +35,25 @@ builder.Services.AddCors(o => o.AddPolicy(SpaCorsPolicy, p =>
     p.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod()));
 
 // Trust X-Forwarded-* from upstream proxy so Connection.RemoteIpAddress is the real client IP.
-// KnownProxies/KnownNetworks should list the trusted proxy hop(s). For dev we clear them so
-// any loopback/sidecar works; in prod populate via config (see ForwardedHeaders:KnownProxies).
+// The middleware only honors X-Forwarded-For when the connection peer is a KnownProxy (single IP)
+// or inside a KnownNetwork (CIDR). PaaS gateways (e.g. Zeabur) connect from a *dynamic* private IP,
+// so pin the proxy's network via ForwardedHeaders:KnownNetworks rather than a single IP.
+// For dev we clear the defaults so any loopback/sidecar works; in prod populate via config.
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.ForwardLimit = 2;
+    // Number of proxy hops to trust. Default 1 (single PaaS gateway in front of the container);
+    // raising it past the real number lets clients spoof X-Forwarded-For to dodge per-IP limits.
+    options.ForwardLimit = builder.Configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 1;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
     foreach (var ip in builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? Array.Empty<string>())
     {
         if (System.Net.IPAddress.TryParse(ip, out var addr)) options.KnownProxies.Add(addr);
+    }
+    foreach (var cidr in builder.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? Array.Empty<string>())
+    {
+        if (System.Net.IPNetwork.TryParse(cidr, out var net)) options.KnownIPNetworks.Add(net);
     }
 });
 
