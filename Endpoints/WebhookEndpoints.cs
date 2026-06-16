@@ -10,7 +10,7 @@ namespace R3.Endpoints;
 
 public static class WebhookEndpoints
 {
-    // Command prefixes. The legacy /記帳 keyword is still read from config (Line:TriggerKeyword).
+    // Command prefixes. The legacy /阿珊 keyword is still read from config (Line:TriggerKeyword).
     private const string TripCommand = "/旅程";
     private const string SwitchTripCommand = "/切換";
     private const string SettleCommand = "/結算";
@@ -47,7 +47,7 @@ public static class WebhookEndpoints
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (payload is null) return Results.Ok();
 
-            var recordKeyword = config["Line:TriggerKeyword"] ?? "/記帳";
+            var recordKeyword = config["Line:TriggerKeyword"] ?? "/阿珊";
 
             foreach (var ev in payload.Events)
             {

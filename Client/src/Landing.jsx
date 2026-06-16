@@ -130,7 +130,7 @@ export default function Landing({ onLogin }) {
             <p className="mt-4 text-lg font-black leading-relaxed">在群組裡用講話的方式記帳,出門在外最快。</p>
             <div className={`mt-5 bg-black text-green-300 p-4 font-black text-base md:text-lg ${brutalShadowSm} space-y-1`}>
               <div>&gt; /旅程 沖繩</div>
-              <div>&gt; /記帳 燒肉 3200 阿明付 大家分</div>
+              <div>&gt; /阿珊 燒肉 3200 阿明付 大家分</div>
               <div>&gt; /結算</div>
             </div>
           </div>
