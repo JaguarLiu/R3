@@ -4,16 +4,16 @@ import {
   DollarSign, Calendar, Settings2,
   CheckCircle2, Circle, Edit3, Download,
   ChevronDown, ChevronUp, Sparkles, BrainCircuit, Loader2, Scale, Filter,
+  ArrowLeft, FolderOpen,
 } from 'lucide-react';
 import { api } from './api.js';
 import { brutalBorder, brutalShadowLg, brutalBtn } from './brutal.js';
 
-const TRIP_STORAGE_KEY = 'r3.tripId';
-
 const App = ({ onLogout }) => {
   // --- 1. State ---
-  const [tripId, setTripId] = useState(() => localStorage.getItem(TRIP_STORAGE_KEY));
-  const [isSetupComplete, setIsSetupComplete] = useState(false);
+  const [tripId, setTripId] = useState(null);
+  const [view, setView] = useState('lobby');   // 'lobby' | 'setup' | 'workspace'
+  const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [settlementMode, setSettlementMode] = useState('direct');
@@ -39,24 +39,20 @@ const App = ({ onLogout }) => {
     selectedForSplit: ['小明', '阿花', '胖虎', '美美'],
   });
 
-  // --- 2. Load existing trip on mount ---
-  useEffect(() => {
-    (async () => {
-      if (!tripId) { setLoading(false); return; }
-      try {
-        const trip = await api.getTrip(tripId);
-        setTripConfig({ title: trip.title, days: trip.days });
-        setParticipants(trip.participants.map(p => p.name));
-        setExpenses((trip.expenses || []).map(normalizeExpense));
-        setIsSetupComplete(true);
-      } catch {
-        localStorage.removeItem(TRIP_STORAGE_KEY);
-        setTripId(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  // --- 2. Load trip list on mount (lobby is the landing) ---
+  useEffect(() => { refreshTrips(); }, []);
+
+  async function refreshTrips() {
+    setLoading(true);
+    try {
+      setTrips(await api.listTrips());
+    } catch (e) {
+      setAiFeedback({ message: `載入列表失敗：${e.message}`, type: 'error' });
+      setTrips([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function normalizeExpense(e) {
     return {
@@ -103,7 +99,7 @@ const App = ({ onLogout }) => {
         day: prev.day || '第 1 天',
       }));
     }
-  }, [participants, editingId, isSetupComplete]);
+  }, [participants, editingId, view]);
 
   const isImbalanced = useMemo(() => {
     if (newExpense.isMultiPayer && newExpense.isCustomSplit) {
@@ -181,6 +177,50 @@ const App = ({ onLogout }) => {
   }
 
   // --- 6. Actions ---
+  function startNewTrip() {
+    setTripId(null);
+    setTripConfig({ title: '我的混亂記帳', days: 3 });
+    setParticipants(['小明', '阿花', '胖虎', '美美']);
+    setExpenses([]);
+    setEditingId(null);
+    setAiFeedback({ message: '', type: '' });
+    setView('setup');
+  }
+
+  async function openTrip(id) {
+    setLoading(true);
+    try {
+      const trip = await api.getTrip(id);
+      setTripId(trip.id);
+      setTripConfig({ title: trip.title, days: trip.days });
+      setParticipants(trip.participants.map(p => p.name));
+      setExpenses((trip.expenses || []).map(normalizeExpense));
+      setEditingId(null);
+      setAiFeedback({ message: '', type: '' });
+      setView('workspace');
+    } catch (e) {
+      setAiFeedback({ message: `打開失敗：${e.message}`, type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteTrip(id, ev) {
+    ev.stopPropagation();
+    if (!window.confirm('確定刪掉這個帳務？刪了就回不來囉！')) return;
+    try {
+      await api.deleteTrip(id);
+      setTrips(prev => prev.filter(t => t.id !== id));
+    } catch (e) {
+      setAiFeedback({ message: `刪除失敗：${e.message}`, type: 'error' });
+    }
+  }
+
+  async function backToLobby() {
+    setView('lobby');
+    await refreshTrips();
+  }
+
   async function handleCompleteSetup() {
     if (participants.length === 0) return;
     try {
@@ -189,9 +229,8 @@ const App = ({ onLogout }) => {
       } else {
         const created = await api.createTrip({ title: tripConfig.title, days: tripConfig.days, participants });
         setTripId(created.id);
-        localStorage.setItem(TRIP_STORAGE_KEY, created.id);
       }
-      setIsSetupComplete(true);
+      setView('workspace');
     } catch (e) {
       setAiFeedback({ message: `儲存失敗：${e.message}`, type: 'error' });
     }
@@ -315,13 +354,65 @@ const App = ({ onLogout }) => {
     );
   }
 
-  if (!isSetupComplete) {
+  if (view === 'lobby') {
+    return (
+      <div className="min-h-screen bg-blue-400 p-4 md:p-8 font-sans text-black overflow-x-hidden pb-20">
+        <div className="max-w-5xl mx-auto space-y-8">
+          <header className={`flex items-center justify-between gap-4 bg-yellow-400 p-6 ${brutalBorder} ${brutalShadowLg} rotate-1`}>
+            <h1 className="text-3xl md:text-4xl font-black uppercase tracking-widest drop-shadow-[2px_2px_0px_white]">我的帳務</h1>
+            <button onClick={onLogout} className="text-sm text-slate-600 underline font-black">登出</button>
+          </header>
+
+          {aiFeedback.message && aiFeedback.type === 'error' && (
+            <div className={`p-4 bg-red-400 text-white font-black ${brutalBorder} shadow-[4px_4px_0px_0px_black]`}>{aiFeedback.message}</div>
+          )}
+
+          <button onClick={startNewTrip}
+            className={`w-full bg-green-400 py-6 text-2xl font-black tracking-widest flex items-center justify-center gap-3 ${brutalBtn}`}>
+            <Plus strokeWidth={4} size={32} /> 開新帳務
+          </button>
+
+          {trips.length === 0 ? (
+            <div className={`bg-white p-10 text-center ${brutalBorder} ${brutalShadowLg} -rotate-1`}>
+              <FolderOpen size={56} strokeWidth={3} className="mx-auto mb-4" />
+              <p className="text-2xl font-black tracking-widest">還沒有任何帳務，開一個來敗家吧！</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {trips.map((t, idx) => (
+                <div key={t.id} onClick={() => openTrip(t.id)}
+                  className={`relative bg-white p-6 cursor-pointer ${brutalBorder} ${brutalShadowLg} ${idx % 2 ? '-rotate-1' : 'rotate-1'} hover:bg-cyan-100 transition-all`}>
+                  {t.isOwner && (
+                    <button onClick={(ev) => handleDeleteTrip(t.id, ev)}
+                      className={`absolute -top-3 -right-3 p-2 bg-red-500 text-white ${brutalBtn}`} aria-label="刪除帳務">
+                      <Trash2 size={20} strokeWidth={3} />
+                    </button>
+                  )}
+                  <h2 className="text-2xl font-black tracking-widest break-words pr-6">{t.title}</h2>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="text-sm font-black bg-yellow-300 px-2 border-2 border-black -rotate-2">{t.days} 天</span>
+                    <span className="text-sm font-black bg-pink-300 px-2 border-2 border-black rotate-2">{new Date(t.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'setup') {
     return (
       <div className="min-h-screen bg-blue-400 flex items-center justify-center p-6 font-sans text-black">
         <div className={`bg-white w-full max-w-lg rounded-2xl ${brutalBorder} ${brutalShadowLg} overflow-hidden -rotate-1`}>
-          <div className="bg-yellow-400 p-8 border-b-4 border-black text-center">
+          <div className="bg-yellow-400 p-8 border-b-4 border-black text-center relative">
+            <button onClick={() => (tripId ? setView('workspace') : backToLobby())}
+              className={`absolute left-4 top-4 bg-white p-2 ${brutalBtn}`} aria-label="返回">
+              <ArrowLeft size={24} strokeWidth={3} />
+            </button>
             <h1 className="text-4xl font-black flex items-center justify-center gap-3 rotate-2 tracking-widest">
-              <Calendar size={36} strokeWidth={3} /> 初始設定!!
+              <Calendar size={36} strokeWidth={3} /> {tripId ? '改設定!!' : '初始設定!!'}
             </h1>
           </div>
           <div className="p-8 space-y-8">
@@ -375,8 +466,11 @@ const App = ({ onLogout }) => {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsSetupComplete(false)} className={`bg-white font-black text-sm flex items-center gap-2 px-4 py-3 ${brutalBtn} hover:bg-gray-200 rotate-2`}>
-              <Settings2 size={20} strokeWidth={3} /> 重設一切
+            <button onClick={backToLobby} className={`bg-white font-black text-sm flex items-center gap-2 px-4 py-3 ${brutalBtn} hover:bg-gray-200 -rotate-2`}>
+              <ArrowLeft size={20} strokeWidth={3} /> 返回列表
+            </button>
+            <button onClick={() => setView('setup')} className={`bg-white font-black text-sm flex items-center gap-2 px-4 py-3 ${brutalBtn} hover:bg-gray-200 rotate-2`}>
+              <Settings2 size={20} strokeWidth={3} /> 設定
             </button>
             <button onClick={onLogout} className="text-sm text-slate-500 underline">登出</button>
           </div>
