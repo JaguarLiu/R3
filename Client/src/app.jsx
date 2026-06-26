@@ -4,7 +4,7 @@ import {
   DollarSign, Calendar, Settings2,
   CheckCircle2, Circle, Edit3, Download,
   ChevronDown, ChevronUp, Sparkles, BrainCircuit, Loader2, Scale, Filter,
-  ArrowLeft, FolderOpen, Share2, Copy, X, RefreshCw, Lock,
+  ArrowLeft, ArrowRight, FolderOpen, Share2, Copy, X, RefreshCw, Lock,
   Receipt, LayoutDashboard,
 } from 'lucide-react';
 import { api } from './api.js';
@@ -460,8 +460,8 @@ const App = ({ onLogout, initialTripId }) => {
 
   if (view === 'setup') {
     return (
-      <div className="min-h-screen bg-blue-400 flex items-center justify-center p-6 font-sans text-black">
-        <div className={`bg-white w-full max-w-lg rounded-2xl ${brutalBorder} ${brutalShadowLg} overflow-hidden -rotate-1`}>
+      <div className="min-h-screen bg-blue-400 flex items-stretch sm:items-center justify-center p-0 sm:p-6 font-sans text-black">
+        <div className={`bg-white w-full max-w-lg ${brutalBorder} overflow-hidden min-h-screen sm:min-h-0 rounded-none sm:rounded-2xl sm:-rotate-1 sm:${brutalShadowLg}`}>
           <div className="bg-yellow-400 p-8 border-b-4 border-black text-center relative">
             <button onClick={() => (tripId ? setView('workspace') : backToLobby())}
               className={`absolute left-4 top-4 bg-white p-2 ${brutalBtn}`} aria-label="返回">
@@ -576,7 +576,7 @@ const App = ({ onLogout, initialTripId }) => {
                         placeholder="阿花買香蕉 100元..." value={aiInputText} onChange={e => setAiInputText(e.target.value)} />
                       {aiFeedback.message && <div className={`p-3 font-black text-sm ${brutalBorder} ${aiFeedback.type === 'error' ? 'bg-red-400 text-white' : 'bg-green-400'}`}>{aiFeedback.message}</div>}
                       <button onClick={handleAiBatchParse} disabled={isAiLoading || !aiInputText.trim()} className={`w-full bg-pink-500 text-white py-3 text-lg font-black disabled:opacity-50 ${brutalBtn}`}>
-                        {isAiLoading ? <Loader2 className="animate-spin mx-auto" /> : '施法解析 ✨'}
+                        {isAiLoading ? <Loader2 className="animate-spin mx-auto" /> : '施法解析'}
                       </button>
                     </div>
                   )}
@@ -788,7 +788,7 @@ const App = ({ onLogout, initialTripId }) => {
                                   {bal > 0 ? `+${bal.toLocaleString()}` : bal.toLocaleString()}
                                 </div>
                                 <div className="text-lg mt-2 bg-white inline-block px-3 border-2 border-black rotate-2 shadow-[2px_2px_0px_0px_black]">
-                                  {bal < 0 ? '拿錢來! 💸' : bal > 0 ? '發大財! 🤑' : '扯平!'}
+                                  {bal < 0 ? '拿錢來!' : bal > 0 ? '發大財!' : '扯平!'}
                                 </div>
                               </td>
                             );
@@ -845,7 +845,7 @@ const App = ({ onLogout, initialTripId }) => {
                     <div key={i} className={`bg-cyan-300 p-6 flex flex-col md:flex-row items-center justify-between ${brutalBorder} shadow-[4px_4px_0px_0px_black] ${i % 2 ? '-rotate-1' : 'rotate-1'}`}>
                       <div className="text-2xl font-black flex items-center gap-4 flex-wrap justify-center">
                         <span className="bg-white px-4 py-2 border-2 border-black">{s.from}</span>
-                        <span className="text-pink-600">➡️ 給 ➡️</span>
+                        <span className="text-pink-600 flex items-center gap-1"><ArrowRight size={20} strokeWidth={3} /> 給 <ArrowRight size={20} strokeWidth={3} /></span>
                         <span className={`px-4 py-2 border-2 border-black ${s.to === settlementsResult.treasurer ? 'bg-yellow-400' : 'bg-white'}`}>{s.to}</span>
                       </div>
                       <div className="text-4xl md:text-5xl font-black text-white drop-shadow-[3px_3px_0px_black] mt-4 md:mt-0">${s.amount.toLocaleString()}</div>
