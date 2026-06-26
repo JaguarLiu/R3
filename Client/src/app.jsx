@@ -4,9 +4,10 @@ import {
   DollarSign, Calendar, Settings2,
   CheckCircle2, Circle, Edit3, Download,
   ChevronDown, ChevronUp, Sparkles, BrainCircuit, Loader2, Scale, Filter,
-  ArrowLeft, FolderOpen, Share2, Copy, X, RefreshCw,
+  ArrowLeft, FolderOpen, Share2, Copy, X, RefreshCw, Lock,
 } from 'lucide-react';
 import { api } from './api.js';
+import { auth } from './auth.js';
 import { brutalBorder, brutalShadowLg, brutalBtn } from './brutal.js';
 
 const App = ({ onLogout, initialTripId }) => {
@@ -23,6 +24,8 @@ const App = ({ onLogout, initialTripId }) => {
   const [aiFeedback, setAiFeedback] = useState({ message: '', type: '' });
 
   const [isOwner, setIsOwner] = useState(false);
+  const [myDisplayName, setMyDisplayName] = useState('');   // 建立者本人的帳號名稱，用來預填新行程
+  const [myParticipantName, setMyParticipantName] = useState(null);   // 我認領的名字（不可被自己刪）
   const [shareInfo, setShareInfo] = useState(null);   // { token, expiresAt } | null
   const [showShare, setShowShare] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
@@ -34,19 +37,20 @@ const App = ({ onLogout, initialTripId }) => {
   const [collapsed, setCollapsed] = useState({ form: false, settlement: false, list: false, dashboard: false });
 
   const [tripConfig, setTripConfig] = useState({ title: '我的混亂記帳', days: 3 });
-  const [participants, setParticipants] = useState(['小明', '阿花', '胖虎', '美美']);
+  const [participants, setParticipants] = useState([]);
   const [newParticipant, setNewParticipant] = useState('');
   const [expenses, setExpenses] = useState([]);
 
   const [newExpense, setNewExpense] = useState({
     day: '第 1 天', item: '', total: '',
-    singlePayer: '小明', isMultiPayer: false, multiPayers: {},
+    singlePayer: '', isMultiPayer: false, multiPayers: {},
     isCustomSplit: false, customSplits: {},
-    selectedForSplit: ['小明', '阿花', '胖虎', '美美'],
+    selectedForSplit: [],
   });
 
   // --- 2. Load trip list on mount (lobby is the landing) ---
   useEffect(() => { refreshTrips(); }, []);
+  useEffect(() => { auth.me().then(u => setMyDisplayName(u?.displayName || '')).catch(() => {}); }, []);
   useEffect(() => { if (initialTripId) openTrip(initialTripId); }, [initialTripId]);
 
   async function refreshTrips() {
@@ -187,7 +191,10 @@ const App = ({ onLogout, initialTripId }) => {
   function startNewTrip() {
     setTripId(null);
     setTripConfig({ title: '我的混亂記帳', days: 3 });
-    setParticipants(['小明', '阿花', '胖虎', '美美']);
+    // 開新行程自動只放建立者本人（並鎖定，不能刪）；不需要手動加名字
+    const me = myDisplayName.trim();
+    setParticipants(me ? [me] : []);
+    setMyParticipantName(me || null);
     setExpenses([]);
     setEditingId(null);
     setAiFeedback({ message: '', type: '' });
@@ -203,6 +210,7 @@ const App = ({ onLogout, initialTripId }) => {
       setParticipants(trip.participants.map(p => p.name));
       setExpenses((trip.expenses || []).map(normalizeExpense));
       setIsOwner(!!trip.isOwner);
+      setMyParticipantName(trip.myParticipantName || null);
       setShareInfo(trip.shareToken ? { token: trip.shareToken, expiresAt: trip.shareExpiresAt } : null);
       setEditingId(null);
       setAiFeedback({ message: '', type: '' });
@@ -274,7 +282,9 @@ const App = ({ onLogout, initialTripId }) => {
       }
       setView('workspace');
     } catch (e) {
-      setAiFeedback({ message: `儲存失敗：${e.message}`, type: 'error' });
+      let msg = e.message;
+      try { const j = JSON.parse(msg); if (j.error === 'cannot_remove_self') msg = `不能刪掉你自己的名字「${j.name}」啦！`; } catch { /* not JSON */ }
+      setAiFeedback({ message: `儲存失敗：${msg}`, type: 'error' });
     }
   }
 
@@ -478,7 +488,9 @@ const App = ({ onLogout, initialTripId }) => {
               <div className="flex flex-wrap gap-3 max-h-40 overflow-y-auto overflow-x-hidden p-2">
                 {participants.map((p, idx) => (
                   <div key={p} className={`bg-pink-400 px-4 py-2 text-xl font-black flex items-center gap-2 ${brutalBorder} shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] ${idx % 2 ? '-rotate-2' : 'rotate-2'}`}>
-                    {p} <Trash2 size={20} strokeWidth={3} className="cursor-pointer hover:text-white" onClick={() => setParticipants(prev => prev.filter(x => x !== p))} />
+                    {p} {p === myParticipantName
+                      ? <Lock size={18} strokeWidth={3} className="opacity-70" aria-label="你自己的名字，不能刪除" />
+                      : <Trash2 size={20} strokeWidth={3} className="cursor-pointer hover:text-white" onClick={() => setParticipants(prev => prev.filter(x => x !== p))} />}
                   </div>
                 ))}
               </div>

@@ -75,7 +75,7 @@ export default function Landing({ onLogin }) {
               開始記帳 <ArrowRight strokeWidth={4} />
             </button>
             <div className={`bg-white px-5 py-5 text-lg font-black flex items-center gap-2 ${brutalBorder} ${brutalShadow} rotate-1`}>
-              <MessageCircle size={22} strokeWidth={3} className="text-green-600" /> 或在 LINE 群 @記帳
+              <MessageCircle size={22} strokeWidth={3} className="text-green-600" /> 或在 LINE 群 /記帳
             </div>
           </div>
         </div>

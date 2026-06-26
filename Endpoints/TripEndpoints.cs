@@ -42,6 +42,8 @@ public static class TripEndpoints
                                      participantId = m.ParticipantId,
                                      participantName = p != null ? p.Name : null })
                                 .ToListAsync(ct);
+            // 目前使用者自己認領的名字（owner 或 member）。前端用來鎖住「不能刪自己的名字」。
+            var myParticipantName = members.FirstOrDefault(m => m.Id == userId.Value)?.participantName;
             var isOwner = trip.OwnerUserId == userId;
             // Return the raw token (owner only); the SPA builds the link from window.location.origin
             // so it works behind the dev proxy / ngrok (where req.Host is the internal backend host).
@@ -53,7 +55,7 @@ public static class TripEndpoints
                 shareExpiresAt = trip.ShareTokenExpiresAt;
             }
             return Results.Ok(new { trip.Id, trip.Title, trip.Days, trip.CreatedAt,
-                isOwner, trip.Participants, trip.Expenses, members, shareToken, shareExpiresAt });
+                isOwner, trip.Participants, trip.Expenses, members, myParticipantName, shareToken, shareExpiresAt });
         });
 
         trips.MapPost("/", async ([FromBody] TripUpsertDto dto, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
@@ -64,11 +66,29 @@ public static class TripEndpoints
             if (tripValidationError != null) return Results.BadRequest(tripValidationError);
 
             var trip = new Trip { Title = dto.Title.Trim(), Days = dto.Days, OwnerUserId = userId };
-            var names = dto.Participants.Select(n => n.Trim()).Distinct().ToList();
+
+            // 自動把建立者放進分攤名單（用帳號顯示名稱），若名單裡已有同名就沿用那一個。
+            var creator = await db.Users.FindAsync(new object[] { userId.Value }, ct);
+            var ownerName = creator?.DisplayName?.Trim();
+            var names = dto.Participants.Select(n => n.Trim()).Where(n => n.Length > 0).Distinct().ToList();
+            if (!string.IsNullOrEmpty(ownerName) && !names.Contains(ownerName))
+                names.Insert(0, ownerName);
+
             for (var i = 0; i < names.Count; i++)
                 trip.Participants.Add(new Participant { Name = names[i], Order = i, TripId = trip.Id });
             db.Trips.Add(trip);
             await db.SaveChangesAsync(ct);
+
+            // 把 owner 綁定到自己的名字：結算會顯示他，且別人不能在分享 dialog 選走這個名字。
+            if (!string.IsNullOrEmpty(ownerName))
+            {
+                var ownerParticipant = trip.Participants.FirstOrDefault(p => p.Name == ownerName);
+                if (ownerParticipant != null)
+                {
+                    db.TripMembers.Add(new TripMember { TripId = trip.Id, UserId = userId.Value, ParticipantId = ownerParticipant.Id });
+                    await db.SaveChangesAsync(ct);
+                }
+            }
             return Results.Created($"/api/trips/{trip.Id}", trip);
         });
 
@@ -87,6 +107,17 @@ public static class TripEndpoints
             // Sync participants by name (preserve ids for existing names so expenses keep working)
             var existingByName = trip.Participants.ToDictionary(p => p.Name);
             var newSet = dto.Participants.Select(n => n.Trim()).Distinct().ToList();
+
+            // owner 不能刪掉自己認領的名字（否則該名字會重新可被別人認領）
+            var ownerBinding = await db.TripMembers
+                .FirstOrDefaultAsync(m => m.TripId == id && m.UserId == userId && m.ParticipantId != null, ct);
+            if (ownerBinding != null)
+            {
+                var ownerName = trip.Participants.FirstOrDefault(p => p.Id == ownerBinding.ParticipantId)?.Name;
+                if (ownerName != null && !newSet.Contains(ownerName))
+                    return Results.BadRequest(new { error = "cannot_remove_self", name = ownerName });
+            }
+
             var toRemove = trip.Participants.Where(p => !newSet.Contains(p.Name)).ToList();
             db.Participants.RemoveRange(toRemove);
             for (var i = 0; i < newSet.Count; i++)
