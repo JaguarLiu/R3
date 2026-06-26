@@ -27,5 +27,6 @@ public class TripMember
     public long Id { get; set; }
     public long TripId { get; set; }
     public long UserId { get; set; }
+    public long? ParticipantId { get; set; }   // 認領的虛擬名稱；null = 未綁定
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -27,17 +27,31 @@ public static class TripEndpoints
                 .ToListAsync(ct));
         });
 
-        trips.MapGet("/{id:long}", async (long id, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
+        trips.MapGet("/{id:long}", async (long id, ClaimsPrincipal principal, AppDbContext db, HttpRequest req, CancellationToken ct) =>
         {
             var userId = principal.CurrentUserId();
             if (userId is null) return Results.Unauthorized();
             var trip = await TripAccess.FindAccessibleAsync(db, id, userId.Value, ownerOnly: false, ct);
             if (trip is null) return Results.NotFound();
-            var members = await db.TripMembers.Where(m => m.TripId == id)
-                .Join(db.Users, m => m.UserId, u => u.Id, (m, u) => new { u.Id, u.DisplayName, u.Email })
-                .ToListAsync(ct);
+            var members = await (from m in db.TripMembers
+                                 where m.TripId == id
+                                 join u in db.Users on m.UserId equals u.Id
+                                 join p in db.Participants on m.ParticipantId equals p.Id into pj
+                                 from p in pj.DefaultIfEmpty()
+                                 select new { u.Id, u.DisplayName, u.Email,
+                                     participantId = m.ParticipantId,
+                                     participantName = p != null ? p.Name : null })
+                                .ToListAsync(ct);
+            var isOwner = trip.OwnerUserId == userId;
+            string? shareUrl = null;
+            DateTime? shareExpiresAt = null;
+            if (isOwner && trip.ShareToken != null && trip.ShareTokenExpiresAt > DateTime.UtcNow)
+            {
+                shareUrl = $"{req.Scheme}://{req.Host}/?join={trip.ShareToken}";
+                shareExpiresAt = trip.ShareTokenExpiresAt;
+            }
             return Results.Ok(new { trip.Id, trip.Title, trip.Days, trip.CreatedAt,
-                isOwner = trip.OwnerUserId == userId, trip.Participants, trip.Expenses, members });
+                isOwner, trip.Participants, trip.Expenses, members, shareUrl, shareExpiresAt });
         });
 
         trips.MapPost("/", async ([FromBody] TripUpsertDto dto, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
@@ -266,6 +280,46 @@ public static class TripEndpoints
             db.TripMembers.Remove(row);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
+        });
+
+        // Owner: 建立 / 重置分享連結
+        trips.MapPost("/{tripId:long}/share", async (long tripId, ClaimsPrincipal principal,
+            AppDbContext db, IConfiguration config, HttpRequest req, CancellationToken ct) =>
+        {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            var linkDays = config.GetValue<int?>("Share:LinkDays") ?? 7;
+            var result = await TripShare.ResetShareAsync(db, tripId, userId.Value, linkDays, ct);
+            if (result is null) return Results.NotFound();
+            var url = $"{req.Scheme}://{req.Host}/?join={result.Value.token}";
+            return Results.Ok(new { token = result.Value.token, url, expiresAt = result.Value.expiresAt });
+        });
+
+        // 受邀者：用 token 加入（需登入；rate-limited）
+        var join = app.MapGroup("/api/trips/join").RequireAuthorization().RequireRateLimiting("share");
+
+        join.MapGet("/{token}", async (string token, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
+        {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            var info = await TripShare.GetJoinInfoAsync(db, token, userId.Value, ct);
+            return info is null ? Results.NotFound() : Results.Ok(info);
+        });
+
+        join.MapPost("/{token}", async (string token, [FromBody] ClaimDto dto, ClaimsPrincipal principal,
+            AppDbContext db, CancellationToken ct) =>
+        {
+            var userId = principal.CurrentUserId();
+            if (userId is null) return Results.Unauthorized();
+            if (dto is null) return Results.BadRequest(new { error = "invalid_body" });
+            var result = await TripShare.ClaimAsync(db, token, userId.Value, dto.ParticipantId, ct);
+            return result.Outcome switch
+            {
+                ClaimOutcome.Success or ClaimOutcome.AlreadyMember => Results.Ok(new { tripId = result.TripId }),
+                ClaimOutcome.ParticipantNotFound => Results.NotFound(new { error = "participant_not_found" }),
+                ClaimOutcome.AlreadyClaimed => Results.Conflict(new { error = "already_claimed" }),
+                _ => Results.NotFound(),
+            };
         });
     }
 }

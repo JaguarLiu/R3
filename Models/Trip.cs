@@ -17,6 +17,10 @@ public class Trip
     // Web ownership. Null for LINE-created trips (accessed only via the webhook).
     public long? OwnerUserId { get; set; }
 
+    // 分享連結（每個行程一條，可重置）。明文存 token 讓 owner 隨時能再分享。
+    public string? ShareToken { get; set; }
+    public DateTime? ShareTokenExpiresAt { get; set; }
+
     public List<Participant> Participants { get; set; } = new();
     public List<SplitExpense> Expenses { get; set; } = new();
 }

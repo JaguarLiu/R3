@@ -21,6 +21,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.LineGroupId);
             e.HasIndex(x => new { x.LineGroupId, x.IsActive });
             e.HasIndex(x => x.OwnerUserId);
+            e.HasIndex(x => x.ShareToken).IsUnique().HasFilter("\"ShareToken\" IS NOT NULL");
             e.HasMany(x => x.Participants).WithOne().HasForeignKey(p => p.TripId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Expenses).WithOne().HasForeignKey(p => p.TripId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -64,6 +65,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasIndex(x => new { x.TripId, x.UserId }).IsUnique();
             e.HasIndex(x => x.UserId);
+            // 一個 Participant 只能被一人認領（Postgres filtered unique index）
+            e.HasIndex(x => new { x.TripId, x.ParticipantId }).IsUnique().HasFilter("\"ParticipantId\" IS NOT NULL");
+            // 認領的 Participant 被刪時，成員保留但解除綁定
+            e.HasOne<Participant>().WithMany().HasForeignKey(x => x.ParticipantId).OnDelete(DeleteBehavior.SetNull);
         });
 
         if (Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")

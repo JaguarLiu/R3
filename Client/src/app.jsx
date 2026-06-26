@@ -4,12 +4,12 @@ import {
   DollarSign, Calendar, Settings2,
   CheckCircle2, Circle, Edit3, Download,
   ChevronDown, ChevronUp, Sparkles, BrainCircuit, Loader2, Scale, Filter,
-  ArrowLeft, FolderOpen,
+  ArrowLeft, FolderOpen, Share2, Copy, X, RefreshCw,
 } from 'lucide-react';
 import { api } from './api.js';
 import { brutalBorder, brutalShadowLg, brutalBtn } from './brutal.js';
 
-const App = ({ onLogout }) => {
+const App = ({ onLogout, initialTripId }) => {
   // --- 1. State ---
   const [tripId, setTripId] = useState(null);
   const [view, setView] = useState('lobby');   // 'lobby' | 'setup' | 'workspace'
@@ -21,6 +21,12 @@ const App = ({ onLogout }) => {
   const [aiAnalysis, setAiAnalysis] = useState('');
   const [aiInputText, setAiInputText] = useState('');
   const [aiFeedback, setAiFeedback] = useState({ message: '', type: '' });
+
+  const [isOwner, setIsOwner] = useState(false);
+  const [shareInfo, setShareInfo] = useState(null);   // { url, expiresAt } | null
+  const [showShare, setShowShare] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [copyOk, setCopyOk] = useState(false);
 
   const [filterPayer, setFilterPerson] = useState('all');
   const [filterDay, setFilterDay] = useState('all');
@@ -41,6 +47,7 @@ const App = ({ onLogout }) => {
 
   // --- 2. Load trip list on mount (lobby is the landing) ---
   useEffect(() => { refreshTrips(); }, []);
+  useEffect(() => { if (initialTripId) openTrip(initialTripId); }, [initialTripId]);
 
   async function refreshTrips() {
     setLoading(true);
@@ -195,6 +202,8 @@ const App = ({ onLogout }) => {
       setTripConfig({ title: trip.title, days: trip.days });
       setParticipants(trip.participants.map(p => p.name));
       setExpenses((trip.expenses || []).map(normalizeExpense));
+      setIsOwner(!!trip.isOwner);
+      setShareInfo(trip.shareUrl ? { url: trip.shareUrl, expiresAt: trip.shareExpiresAt } : null);
       setEditingId(null);
       setAiFeedback({ message: '', type: '' });
       setView('workspace');
@@ -219,6 +228,35 @@ const App = ({ onLogout }) => {
   async function backToLobby() {
     setView('lobby');
     await refreshTrips();
+  }
+
+  async function handleGenerateShare() {
+    setShareBusy(true);
+    try {
+      const r = await api.resetShareLink(tripId);
+      setShareInfo({ url: r.url, expiresAt: r.expiresAt });
+    } catch (e) {
+      setAiFeedback({ message: `產生連結失敗：${e.message}`, type: 'error' });
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  function handleShareViaLine() {
+    if (!shareInfo?.url) return;
+    const text = `來分帳啦！點我加入「${tripConfig.title}」：${shareInfo.url}`;
+    window.open('https://line.me/R/msg/text/?' + encodeURIComponent(text), '_blank');
+  }
+
+  async function handleCopyShare() {
+    if (!shareInfo?.url) return;
+    try {
+      await navigator.clipboard.writeText(shareInfo.url);
+      setCopyOk(true);
+      setTimeout(() => setCopyOk(false), 1500);
+    } catch {
+      setAiFeedback({ message: '複製失敗，請手動長按連結複製', type: 'error' });
+    }
   }
 
   async function handleCompleteSetup() {
@@ -466,6 +504,12 @@ const App = ({ onLogout }) => {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {isOwner && (
+              <button onClick={() => setShowShare(true)}
+                className={`bg-cyan-300 font-black text-sm flex items-center gap-2 px-4 py-3 ${brutalBtn} hover:bg-cyan-200 rotate-2`}>
+                <Share2 size={20} strokeWidth={3} /> 分享
+              </button>
+            )}
             <button onClick={backToLobby} className={`bg-white font-black text-sm flex items-center gap-2 px-4 py-3 ${brutalBtn} hover:bg-gray-200 -rotate-2`}>
               <ArrowLeft size={20} strokeWidth={3} /> 返回列表
             </button>
@@ -777,6 +821,53 @@ const App = ({ onLogout }) => {
           )}
         </div>
       </div>
+
+      {showShare && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+          onClick={() => setShowShare(false)}>
+          <div className={`bg-white w-full max-w-md ${brutalBorder} ${brutalShadowLg} -rotate-1`}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="bg-cyan-300 p-5 border-b-4 border-black flex items-center justify-between">
+              <h2 className="text-2xl font-black tracking-widest flex items-center gap-2">
+                <Share2 strokeWidth={3} /> 分享帳務
+              </h2>
+              <button onClick={() => setShowShare(false)} className={`bg-white p-2 ${brutalBtn}`} aria-label="關閉">
+                <X size={20} strokeWidth={3} />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              {!shareInfo ? (
+                <button onClick={handleGenerateShare} disabled={shareBusy}
+                  className={`w-full bg-green-400 py-4 text-xl font-black tracking-widest disabled:opacity-50 ${brutalBtn}`}>
+                  {shareBusy ? <Loader2 className="animate-spin mx-auto" /> : '產生分享連結'}
+                </button>
+              ) : (
+                <>
+                  <p className="font-black text-sm tracking-widest">把連結丟給朋友，他登入後自己挑名字認領：</p>
+                  <div className={`bg-gray-100 p-3 text-sm font-black break-all ${brutalBorder}`}>{shareInfo.url}</div>
+                  <p className="text-xs font-black text-slate-500">
+                    到期：{new Date(shareInfo.expiresAt).toLocaleString()}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button onClick={handleShareViaLine}
+                      className={`py-3 text-lg font-black text-white bg-[#06C755] ${brutalBtn}`}>
+                      LINE 分享
+                    </button>
+                    <button onClick={handleCopyShare}
+                      className={`py-3 text-lg font-black flex items-center justify-center gap-2 ${brutalBtn} ${copyOk ? 'bg-green-400' : 'bg-yellow-300'}`}>
+                      <Copy size={18} strokeWidth={3} /> {copyOk ? '已複製!' : '複製連結'}
+                    </button>
+                  </div>
+                  <button onClick={handleGenerateShare} disabled={shareBusy}
+                    className={`w-full bg-white py-3 text-base font-black flex items-center justify-center gap-2 ${brutalBtn}`}>
+                    <RefreshCw size={18} strokeWidth={3} className={shareBusy ? 'animate-spin' : ''} /> 重新產生（舊連結失效）
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

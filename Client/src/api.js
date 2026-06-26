@@ -52,4 +52,10 @@ export const api = {
     req(`/trips/${tripId}/members`, { method: 'POST', body: JSON.stringify({ email }) }),
   removeMember: (tripId, userId) =>
     req(`/trips/${tripId}/members/${userId}`, { method: 'DELETE' }),
+
+  resetShareLink: (tripId) =>
+    req(`/trips/${tripId}/share`, { method: 'POST' }),
+  getJoinInfo: (token) => req(`/trips/join/${encodeURIComponent(token)}`),
+  claimJoin: (token, participantId) =>
+    req(`/trips/join/${encodeURIComponent(token)}`, { method: 'POST', body: JSON.stringify({ participantId }) }),
 };
