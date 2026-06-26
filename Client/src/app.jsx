@@ -5,6 +5,7 @@ import {
   CheckCircle2, Circle, Edit3, Download,
   ChevronDown, ChevronUp, Sparkles, BrainCircuit, Loader2, Scale, Filter,
   ArrowLeft, FolderOpen, Share2, Copy, X, RefreshCw, Lock,
+  Receipt, LayoutDashboard,
 } from 'lucide-react';
 import { api } from './api.js';
 import { auth } from './auth.js';
@@ -24,6 +25,7 @@ const App = ({ onLogout, initialTripId }) => {
   const [aiFeedback, setAiFeedback] = useState({ message: '', type: '' });
 
   const [isOwner, setIsOwner] = useState(false);
+  const [mobileTab, setMobileTab] = useState('record');   // 手機底部分頁：record | list | board | settle
   const [myDisplayName, setMyDisplayName] = useState('');   // 建立者本人的帳號名稱，用來預填新行程
   const [myParticipantName, setMyParticipantName] = useState(null);   // 我認領的名字（不可被自己刪）
   const [shareInfo, setShareInfo] = useState(null);   // { token, expiresAt } | null
@@ -308,6 +310,7 @@ const App = ({ onLogout, initialTripId }) => {
       }
       setEditingId(null);
       setCollapsed(prev => ({ ...prev, form: true, list: false }));
+      setMobileTab('list');   // 記完一筆，手機自動跳到明細看結果
       setNewExpense(prev => ({ ...prev, item: '', total: '', multiPayers: {}, customSplits: {}, selectedForSplit: [...participants] }));
       setAiFeedback({ message: '', type: '' });
     } catch (e) {
@@ -346,6 +349,7 @@ const App = ({ onLogout, initialTripId }) => {
       setAiInputText('');
       setAiFeedback({ message: `塞入了 ${created.length} 筆！`, type: 'success' });
       setCollapsed(prev => ({ ...prev, list: false }));
+      setMobileTab('list');
     } catch (e) {
       // Backend may return JSON like {"error":"unknown_names","names":[...]}
       let msg = e.message || '解析失敗啦';
@@ -506,10 +510,26 @@ const App = ({ onLogout, initialTripId }) => {
   }
 
   return (
-    <div className="min-h-screen bg-blue-400 p-3 md:p-8 font-sans text-black overflow-x-hidden pb-20">
+    <div className="min-h-screen bg-blue-400 p-3 md:p-8 font-sans text-black overflow-x-hidden pb-28 lg:pb-10">
       <div className="max-w-6xl mx-auto space-y-6 md:space-y-10">
 
-        <header className={`flex flex-col md:flex-row items-center justify-between gap-4 bg-yellow-400 p-6 md:p-8 ${brutalBorder} ${brutalShadowLg} rotate-1`}>
+        {/* 手機版頂部 app bar：返回 / 旅程名 / 分享·設定 */}
+        <header className="lg:hidden sticky top-0 z-30 -mx-3 md:-mx-8 -mt-3 md:-mt-8 mb-1 bg-yellow-400 border-b-4 border-black flex items-center gap-2 px-3 py-3">
+          <button onClick={backToLobby} className={`bg-white p-2 ${brutalBtn}`} aria-label="返回列表">
+            <ArrowLeft size={20} strokeWidth={3} />
+          </button>
+          <h1 className="flex-1 min-w-0 truncate text-xl font-black tracking-widest uppercase drop-shadow-[1px_1px_0px_white]">{tripConfig.title}</h1>
+          {isOwner && (
+            <button onClick={() => setShowShare(true)} className={`bg-cyan-300 p-2 ${brutalBtn}`} aria-label="分享">
+              <Share2 size={20} strokeWidth={3} />
+            </button>
+          )}
+          <button onClick={() => setView('setup')} className={`bg-white p-2 ${brutalBtn}`} aria-label="設定">
+            <Settings2 size={20} strokeWidth={3} />
+          </button>
+        </header>
+
+        <header className={`hidden lg:flex lg:flex-row items-center justify-between gap-4 bg-yellow-400 p-6 md:p-8 ${brutalBorder} ${brutalShadowLg} rotate-1`}>
           <div className="flex flex-col sm:flex-row items-center gap-5">
             <div className={`bg-pink-500 p-4 ${brutalBorder} shadow-[4px_4px_0px_0px_black] sm:-rotate-6`}><Calculator size={32} strokeWidth={3} className="text-white" /></div>
             <div className="sm:-rotate-1 text-center sm:text-left">
@@ -537,7 +557,7 @@ const App = ({ onLogout, initialTripId }) => {
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <div className="lg:col-span-4 space-y-6">
+          <div className={`lg:col-span-4 space-y-6 ${mobileTab === 'record' ? 'block' : 'hidden'} lg:block`}>
             <div className={`bg-white ${brutalBorder} ${brutalShadowLg} ${editingId ? 'bg-yellow-200' : ''}`}>
               <button onClick={() => toggleCollapse('form')} className="w-full p-6 flex items-center justify-between bg-green-400 border-b-4 border-black">
                 <h2 className="text-2xl font-black flex items-center gap-2 tracking-widest">
@@ -652,7 +672,7 @@ const App = ({ onLogout, initialTripId }) => {
           </div>
 
           <div className="lg:col-span-8 space-y-6">
-            <div className={`bg-white ${brutalBorder} ${brutalShadowLg} overflow-hidden`}>
+            <div className={`bg-white ${brutalBorder} ${brutalShadowLg} overflow-hidden ${mobileTab === 'list' ? 'block' : 'hidden'} lg:block`}>
               <div className="p-6 bg-blue-500 border-b-4 border-black flex flex-col sm:flex-row justify-between gap-4">
                 <h2 className="font-black text-2xl text-white flex items-center gap-3 drop-shadow-[2px_2px_0px_black] tracking-widest">
                   <Users size={28} strokeWidth={3} /> 花錢流水帳 ({expenses.length})
@@ -731,7 +751,7 @@ const App = ({ onLogout, initialTripId }) => {
               )}
             </div>
 
-            <div className={`bg-white ${brutalBorder} ${brutalShadowLg} overflow-hidden`}>
+            <div className={`bg-white ${brutalBorder} ${brutalShadowLg} overflow-hidden ${mobileTab === 'board' ? 'block' : 'hidden'} lg:block`}>
               <button onClick={() => toggleCollapse('dashboard')} className="w-full p-6 border-b-4 border-black bg-pink-400 flex items-center justify-between">
                 <h2 className="text-2xl font-black flex items-center gap-3 drop-shadow-[2px_2px_0px_white] tracking-widest"><DollarSign strokeWidth={4} size={32} /> 終極大看板</h2>
                 {collapsed.dashboard ? <ChevronDown size={28} strokeWidth={3} /> : <ChevronUp size={28} strokeWidth={3} />}
@@ -782,7 +802,7 @@ const App = ({ onLogout, initialTripId }) => {
             </div>
 
             {expenses.length > 0 && (
-              <div className={`bg-cyan-400 p-8 ${brutalBorder} ${brutalShadowLg} -rotate-1`}>
+              <div className={`bg-cyan-400 p-8 ${brutalBorder} ${brutalShadowLg} -rotate-1 ${mobileTab === 'board' ? 'block' : 'hidden'} lg:block`}>
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-3xl font-black flex items-center gap-3 tracking-widest drop-shadow-[2px_2px_0px_white] bg-yellow-400 px-4 py-2 border-4 border-black rotate-2">
                     <BrainCircuit size={32} strokeWidth={3} /> 機器人碎碎念
@@ -799,7 +819,7 @@ const App = ({ onLogout, initialTripId }) => {
           </div>
         </div>
 
-        <div className={`bg-purple-500 ${brutalBorder} ${brutalShadowLg} rotate-1`}>
+        <div className={`bg-purple-500 ${brutalBorder} ${brutalShadowLg} rotate-1 ${mobileTab === 'settle' ? 'block' : 'hidden'} lg:block`}>
           <button onClick={() => toggleCollapse('settlement')} className="w-full p-6 flex items-center justify-between border-b-4 border-black bg-green-400">
             <h2 className="text-3xl font-black flex items-center gap-3 drop-shadow-[2px_2px_0px_white] tracking-widest"><CreditCard strokeWidth={4} size={36} /> 討債小幫手</h2>
             {collapsed.settlement ? <ChevronDown size={32} strokeWidth={4} /> : <ChevronUp size={32} strokeWidth={4} />}
@@ -884,6 +904,27 @@ const App = ({ onLogout, initialTripId }) => {
           </div>
         </div>
       )}
+
+      {/* 手機版底部分頁列（桌機隱藏，桌機維持原本格狀版面） */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t-4 border-black shadow-[0_-4px_0px_0px_rgba(0,0,0,1)] flex pb-[env(safe-area-inset-bottom)]">
+        {[
+          { id: 'record', label: '記帳', Icon: Plus },
+          { id: 'list', label: '明細', Icon: Receipt },
+          { id: 'board', label: '看板', Icon: LayoutDashboard },
+          { id: 'settle', label: '結算', Icon: CreditCard },
+        ].map(({ id, label, Icon }) => {
+          const on = mobileTab === id;
+          return (
+            <button key={id} onClick={() => setMobileTab(id)} aria-current={on ? 'page' : undefined}
+              className="flex-1 flex flex-col items-center justify-center gap-1 py-2 active:translate-y-[2px] transition-transform">
+              <span className={`p-1.5 border-2 ${on ? 'bg-yellow-300 border-black shadow-[2px_2px_0px_0px_black]' : 'border-transparent'}`}>
+                <Icon size={22} strokeWidth={3} className={on ? 'text-black' : 'text-slate-600'} />
+              </span>
+              <span className={`text-xs font-black tracking-widest ${on ? 'text-black' : 'text-slate-600'}`}>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 };
