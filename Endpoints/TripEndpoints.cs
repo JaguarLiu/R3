@@ -27,7 +27,7 @@ public static class TripEndpoints
                 .ToListAsync(ct));
         });
 
-        trips.MapGet("/{id:long}", async (long id, ClaimsPrincipal principal, AppDbContext db, HttpRequest req, CancellationToken ct) =>
+        trips.MapGet("/{id:long}", async (long id, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
             var userId = principal.CurrentUserId();
             if (userId is null) return Results.Unauthorized();
@@ -43,15 +43,17 @@ public static class TripEndpoints
                                      participantName = p != null ? p.Name : null })
                                 .ToListAsync(ct);
             var isOwner = trip.OwnerUserId == userId;
-            string? shareUrl = null;
+            // Return the raw token (owner only); the SPA builds the link from window.location.origin
+            // so it works behind the dev proxy / ngrok (where req.Host is the internal backend host).
+            string? shareToken = null;
             DateTime? shareExpiresAt = null;
             if (isOwner && trip.ShareToken != null && trip.ShareTokenExpiresAt > DateTime.UtcNow)
             {
-                shareUrl = $"{req.Scheme}://{req.Host}/?join={trip.ShareToken}";
+                shareToken = trip.ShareToken;
                 shareExpiresAt = trip.ShareTokenExpiresAt;
             }
             return Results.Ok(new { trip.Id, trip.Title, trip.Days, trip.CreatedAt,
-                isOwner, trip.Participants, trip.Expenses, members, shareUrl, shareExpiresAt });
+                isOwner, trip.Participants, trip.Expenses, members, shareToken, shareExpiresAt });
         });
 
         trips.MapPost("/", async ([FromBody] TripUpsertDto dto, ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
@@ -284,15 +286,15 @@ public static class TripEndpoints
 
         // Owner: 建立 / 重置分享連結
         trips.MapPost("/{tripId:long}/share", async (long tripId, ClaimsPrincipal principal,
-            AppDbContext db, IConfiguration config, HttpRequest req, CancellationToken ct) =>
+            AppDbContext db, IConfiguration config, CancellationToken ct) =>
         {
             var userId = principal.CurrentUserId();
             if (userId is null) return Results.Unauthorized();
             var linkDays = config.GetValue<int?>("Share:LinkDays") ?? 7;
             var result = await TripShare.ResetShareAsync(db, tripId, userId.Value, linkDays, ct);
             if (result is null) return Results.NotFound();
-            var url = $"{req.Scheme}://{req.Host}/?join={result.Value.token}";
-            return Results.Ok(new { token = result.Value.token, url, expiresAt = result.Value.expiresAt });
+            // SPA builds the link from window.location.origin; just hand back the token.
+            return Results.Ok(new { token = result.Value.token, expiresAt = result.Value.expiresAt });
         });
 
         // 受邀者：用 token 加入（需登入；rate-limited）

@@ -23,7 +23,7 @@ const App = ({ onLogout, initialTripId }) => {
   const [aiFeedback, setAiFeedback] = useState({ message: '', type: '' });
 
   const [isOwner, setIsOwner] = useState(false);
-  const [shareInfo, setShareInfo] = useState(null);   // { url, expiresAt } | null
+  const [shareInfo, setShareInfo] = useState(null);   // { token, expiresAt } | null
   const [showShare, setShowShare] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [copyOk, setCopyOk] = useState(false);
@@ -203,7 +203,7 @@ const App = ({ onLogout, initialTripId }) => {
       setParticipants(trip.participants.map(p => p.name));
       setExpenses((trip.expenses || []).map(normalizeExpense));
       setIsOwner(!!trip.isOwner);
-      setShareInfo(trip.shareUrl ? { url: trip.shareUrl, expiresAt: trip.shareExpiresAt } : null);
+      setShareInfo(trip.shareToken ? { token: trip.shareToken, expiresAt: trip.shareExpiresAt } : null);
       setEditingId(null);
       setAiFeedback({ message: '', type: '' });
       setView('workspace');
@@ -230,11 +230,15 @@ const App = ({ onLogout, initialTripId }) => {
     await refreshTrips();
   }
 
+  // Build the magic link from the origin the user's browser is actually on.
+  // Never from the backend's req.Host — behind the dev proxy / ngrok that's the internal host.
+  const shareUrl = shareInfo ? `${window.location.origin}/?join=${shareInfo.token}` : '';
+
   async function handleGenerateShare() {
     setShareBusy(true);
     try {
       const r = await api.resetShareLink(tripId);
-      setShareInfo({ url: r.url, expiresAt: r.expiresAt });
+      setShareInfo({ token: r.token, expiresAt: r.expiresAt });
     } catch (e) {
       setAiFeedback({ message: `產生連結失敗：${e.message}`, type: 'error' });
     } finally {
@@ -243,15 +247,15 @@ const App = ({ onLogout, initialTripId }) => {
   }
 
   function handleShareViaLine() {
-    if (!shareInfo?.url) return;
-    const text = `來分帳啦！點我加入「${tripConfig.title}」：${shareInfo.url}`;
+    if (!shareUrl) return;
+    const text = `來分帳啦！點我加入「${tripConfig.title}」：${shareUrl}`;
     window.open('https://line.me/R/msg/text/?' + encodeURIComponent(text), '_blank');
   }
 
   async function handleCopyShare() {
-    if (!shareInfo?.url) return;
+    if (!shareUrl) return;
     try {
-      await navigator.clipboard.writeText(shareInfo.url);
+      await navigator.clipboard.writeText(shareUrl);
       setCopyOk(true);
       setTimeout(() => setCopyOk(false), 1500);
     } catch {
@@ -844,7 +848,7 @@ const App = ({ onLogout, initialTripId }) => {
               ) : (
                 <>
                   <p className="font-black text-sm tracking-widest">把連結丟給朋友，他登入後自己挑名字認領：</p>
-                  <div className={`bg-gray-100 p-3 text-sm font-black break-all ${brutalBorder}`}>{shareInfo.url}</div>
+                  <div className={`bg-gray-100 p-3 text-sm font-black break-all ${brutalBorder}`}>{shareUrl}</div>
                   <p className="text-xs font-black text-slate-500">
                     到期：{new Date(shareInfo.expiresAt).toLocaleString()}
                   </p>
