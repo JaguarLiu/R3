@@ -276,13 +276,16 @@ const App = ({ onLogout, initialTripId }) => {
   async function handleCompleteSetup() {
     if (participants.length === 0) return;
     try {
+      let id = tripId;
       if (tripId) {
         await api.updateTrip(tripId, { title: tripConfig.title, days: tripConfig.days, participants });
       } else {
         const created = await api.createTrip({ title: tripConfig.title, days: tripConfig.days, participants });
-        setTripId(created.id);
+        id = created.id;
       }
-      setView('workspace');
+      // 重新載入整筆行程，讓 isOwner / 自動加入的本人名字 / 分享 token 立即同步
+      // （否則第一次建立後 isOwner 仍是 false，分享鈕不會出現）
+      await openTrip(id);
     } catch (e) {
       let msg = e.message;
       try { const j = JSON.parse(msg); if (j.error === 'cannot_remove_self') msg = `不能刪掉你自己的名字「${j.name}」啦！`; } catch { /* not JSON */ }
