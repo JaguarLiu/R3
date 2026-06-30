@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Plus, Trash2, Calculator, CreditCard, Users,
   DollarSign, Calendar, Settings2,
@@ -10,6 +10,48 @@ import {
 import { api } from './api.js';
 import { auth } from './auth.js';
 import { brutalBorder, brutalShadowLg, brutalBtn } from './brutal.js';
+
+// 姓名標籤：桌機 hover、手機點擊時，在旁邊秀出這個金主/分攤者出了多少錢。
+// 旋轉效果套在內層 chip，tooltip 放在未旋轉的外層容器，才不會跟著歪掉。
+function NameChip({ name, amount, label, chipClass }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  // 手機：點到 chip 以外的地方就關掉 tooltip。
+  useEffect(() => {
+    if (!open) return;
+    const onDocPointer = (ev) => {
+      if (ref.current && !ref.current.contains(ev.target)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDocPointer);
+    return () => document.removeEventListener('pointerdown', onDocPointer);
+  }, [open]);
+
+  return (
+    <span ref={ref} className="relative inline-flex">
+      <span
+        className={chipClass}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onClick={() => setOpen(o => !o)}
+        role="button"
+        tabIndex={0}
+      >
+        {name}
+      </span>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-30 whitespace-nowrap
+            bg-black text-white px-2 py-1 text-sm font-black border-2 border-black
+            shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] rotate-1 pointer-events-none"
+        >
+          {label} ${Number(amount).toLocaleString()}
+        </span>
+      )}
+    </span>
+  );
+}
 
 const App = ({ onLogout, initialTripId }) => {
   // --- 1. State ---
@@ -392,8 +434,13 @@ const App = ({ onLogout, initialTripId }) => {
 
   function startEdit(exp) {
     setEditingId(exp.id); setCollapsed(prev => ({ ...prev, form: false }));
+    // The day dropdown only offers 第1天..第N天. If the stored day isn't one of
+    // those (e.g. the AI placeholder 第 X 天), default to 第 1 天 so the select
+    // shows a real option instead of silently keeping an invalid value.
+    const validDays = Array.from({ length: tripConfig.days }, (_, i) => `第 ${i + 1} 天`);
+    const day = validDays.includes(String(exp.day)) ? String(exp.day) : '第 1 天';
     setNewExpense({
-      day: String(exp.day), item: exp.item, total: String(exp.total),
+      day, item: exp.item, total: String(exp.total),
       singlePayer: Object.keys(exp.payers || {})[0] || participants[0],
       isMultiPayer: Object.keys(exp.payers || {}).length > 1,
       multiPayers: { ...(exp.payers || {}) },
@@ -727,15 +774,17 @@ const App = ({ onLogout, initialTripId }) => {
                             <td className="px-6 py-4 text-right text-3xl border-r-4 border-black">${Number(e.total).toLocaleString()}</td>
                             <td className="px-6 py-4 text-center border-r-4 border-black">
                               <div className="flex flex-wrap justify-center gap-2">
-                                {Object.keys(e.payers || {}).map(n => (
-                                  <span key={n} className={`px-3 py-1 ${brutalBorder} shadow-[2px_2px_0px_0px_black] ${n === filterPayer ? 'bg-pink-500 text-white rotate-2' : 'bg-yellow-300 -rotate-2'}`}>{n}</span>
+                                {Object.entries(e.payers || {}).map(([n, a]) => (
+                                  <NameChip key={n} name={n} amount={a} label="付"
+                                    chipClass={`cursor-pointer px-3 py-1 ${brutalBorder} shadow-[2px_2px_0px_0px_black] ${n === filterPayer ? 'bg-pink-500 text-white rotate-2' : 'bg-yellow-300 -rotate-2'}`} />
                                 ))}
                               </div>
                             </td>
                             <td className="px-6 py-4 text-center border-r-4 border-black">
                               <div className="flex flex-wrap justify-center gap-2">
                                 {Object.entries(e.splits || {}).map(([n, a]) => Number(a) > 0 && (
-                                  <span key={n} className={`px-2 py-1 bg-white ${brutalBorder} text-sm rotate-1`}>{n}</span>
+                                  <NameChip key={n} name={n} amount={a} label="分"
+                                    chipClass={`cursor-pointer px-2 py-1 bg-white ${brutalBorder} text-sm rotate-1`} />
                                 ))}
                               </div>
                             </td>

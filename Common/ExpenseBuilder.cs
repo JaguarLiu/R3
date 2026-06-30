@@ -41,11 +41,21 @@ public static class ExpenseBuilder
         return new SplitExpense
         {
             TripId = tripId,
-            Day = string.IsNullOrWhiteSpace(item.Day) ? "第 1 天" : item.Day,
+            Day = NormalizeDay(item.Day),
             Item = item.Item.Trim(),
             Total = item.Total,
             Payers = payers,
             Splits = splits,
         };
+    }
+
+    // Day must be a "第 N 天" string; anything else (null, blank, or the model's
+    // "第 X 天" placeholder) falls back to day 1.
+    private static string NormalizeDay(string? day)
+    {
+        if (!string.IsNullOrWhiteSpace(day) &&
+            System.Text.RegularExpressions.Regex.IsMatch(day, @"^第\s*\d+\s*天$"))
+            return day;
+        return "第 1 天";
     }
 }
